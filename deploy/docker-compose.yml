@@ -1,0 +1,134 @@
+# Produktionsstack fuer Kenergy Solutions auf einer Lightsail-Instanz.
+#
+# Ein einzelner Nutzer, deshalb kein ALB und kein RDS. Postgres und Redis
+# laufen als Container auf derselben Maschine, Caddy terminiert TLS.
+#
+# Das Server-Image kommt aus dem eigenen Fork, nicht von twentycrm.
+# Gebaut wird es von .github/workflows/kenergy-build-image.yaml.
+
+name: twenty
+
+x-twenty-common: &twenty-common
+  image: ghcr.io/kenergy-solutions/twenty:${TAG:-latest}
+  volumes:
+    - server-local-data:/app/packages/twenty-server/.local-storage
+  environment: &twenty-env
+    PG_DATABASE_URL: postgres://${PG_DATABASE_USER:-postgres}:${PG_DATABASE_PASSWORD}@db:5432/${PG_DATABASE_NAME:-default}
+    REDIS_URL: redis://redis:6379
+    SERVER_URL: ${SERVER_URL}
+    ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+    FALLBACK_ENCRYPTION_KEY: ${FALLBACK_ENCRYPTION_KEY:-}
+    STORAGE_TYPE: ${STORAGE_TYPE:-local}
+    # Ohne diese Zeile laufen die Logic Functions der App nicht. Der
+    # Default ist unter NODE_ENV=production DISABLED, und das Image setzt
+    # NODE_ENV=production. Dann scheitert schon die Installation der App,
+    # nicht erst die Ausfuehrung.
+    LOGIC_FUNCTION_TYPE: ${LOGIC_FUNCTION_TYPE:-LOCAL}
+  restart: always
+
+services:
+  server:
+    <<: *twenty-common
+    environment:
+      <<: *twenty-env
+      NODE_PORT: 3000
+      # Muss ueber Caddys upstream-keepalive von 120s liegen, sonst holt
+      # sich Caddy eine Verbindung aus dem Pool, die der Server schon
+      # geschlossen hat. Das trifft nur nicht-idempotente Requests, also
+      # genau die GraphQL-Mutationen, und sieht dann wie ein 502 aus.
+      SERVER_KEEP_ALIVE_TIMEOUT_MS: ${SERVER_KEEP_ALIVE_TIMEOUT_MS:-125000}
+    # Kein ports-Eintrag: der Server ist nur ueber Caddy erreichbar.
+    expose:
+      - "3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: curl --fail http://localhost:3000/healthz
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 120s
+    deploy:
+      resources:
+        limits:
+          memory: 1800M
+
+  worker:
+    <<: *twenty-common
+    command: ["yarn", "worker:prod"]
+    environment:
+      <<: *twenty-env
+      DISABLE_DB_MIGRATIONS: "true"
+      DISABLE_CRON_JOBS_REGISTRATION: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+      server:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          memory: 1200M
+
+  db:
+    image: postgres:16
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${PG_DATABASE_USER:-postgres}
+      POSTGRES_PASSWORD: ${PG_DATABASE_PASSWORD}
+      POSTGRES_DB: ${PG_DATABASE_NAME:-default}
+    healthcheck:
+      test: pg_isready -U ${PG_DATABASE_USER:-postgres} -h localhost -d postgres
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 700M
+
+  redis:
+    image: redis:7
+    command: ["--maxmemory-policy", "noeviction"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: always
+    deploy:
+      resources:
+        limits:
+          memory: 200M
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - caddy-logs:/var/log/caddy
+    environment:
+      DOMAIN: ${DOMAIN}
+      ACME_EMAIL: ${ACME_EMAIL}
+    depends_on:
+      - server
+    restart: always
+
+volumes:
+  db-data:
+  redis-data:
+  server-local-data:
+  caddy-data:
+  caddy-config:
+  caddy-logs:

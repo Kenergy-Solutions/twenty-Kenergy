@@ -1,0 +1,32 @@
+# Reverse Proxy fuer die Twenty-Instanz.
+#
+# Caddy holt und erneuert das Zertifikat selbst ueber ACME. Dafuer muss
+# Port 80 und 443 von aussen erreichbar sein und der A-Record der Domain
+# auf die statische IP der Lightsail-Instanz zeigen, bevor Caddy startet.
+#
+# DOMAIN und ACME_EMAIL kommen aus der .env (siehe .env.example).
+
+{
+	email {$ACME_EMAIL}
+}
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Twenty liefert Frontend und API aus demselben Container auf 3000.
+	reverse_proxy server:3000 {
+		# Muss unter SERVER_KEEP_ALIVE_TIMEOUT_MS des Servers liegen, sonst
+		# schliesst der Server die Verbindung waehrend Caddy sie noch nutzt.
+		transport http {
+			read_timeout 60s
+			write_timeout 60s
+		}
+	}
+
+	log {
+		output file /var/log/caddy/access.log {
+			roll_size 10MiB
+			roll_keep 5
+		}
+	}
+}

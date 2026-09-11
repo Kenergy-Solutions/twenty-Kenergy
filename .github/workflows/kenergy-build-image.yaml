@@ -1,0 +1,77 @@
+# Baut das Twenty-Server-Image aus diesem Fork und schiebt es nach ghcr.io.
+#
+# Der Deploy auf den Server passiert NICHT hier. Auf der Instanz laeuft
+# "docker compose pull && docker compose up -d", wenn ein Mensch das will.
+
+name: Kenergy build image
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: kenergy-build-image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image name
+        id: image
+        run: echo "name=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/twenty" >> "$GITHUB_OUTPUT"
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./packages/twenty-docker/twenty/Dockerfile
+          target: twenty
+          # Zwingend. Der Mac ist arm64, die Lightsail-Instanz amd64.
+          # Ohne diese Zeile baut der Runner sein eigenes Format und das
+          # Image startet auf dem Server nicht.
+          platforms: linux/amd64
+          push: true
+          build-args: |
+            APP_VERSION=${{ github.sha }}
+          tags: |
+            ${{ steps.image.outputs.name }}:${{ github.sha }}
+            ${{ steps.image.outputs.name }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Summary
+        run: |
+          {
+            echo "### Image gebaut"
+            echo ""
+            echo '```'
+            echo "${{ steps.image.outputs.name }}:${{ github.sha }}"
+            echo "${{ steps.image.outputs.name }}:latest"
+            echo '```'
+            echo ""
+            echo "Auf dem Server einspielen:"
+            echo '```bash'
+            echo "cd ~/twenty && echo TAG=${{ github.sha }} >> .env && docker compose pull && docker compose up -d"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
