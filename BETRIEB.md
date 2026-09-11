@@ -118,12 +118,25 @@ gibt es nicht, auch nicht als Alias.
 
 ## Stages
 
-Die neun Stages sind der einzige Teil des Datenmodells, der nicht als Code
-vorliegt. Eine App kann die Optionen des Standard-Feldes `stage` nicht per
-Manifest setzen: der Sync-Diff ist auf die eigene `applicationId`
-beschraenkt, und ein zweites Feld namens `stage` wird abgelehnt.
+Die neun Stages werden bei der **Erstinstallation** von der App gesetzt,
+durch die Post-Install-Function `setup-opportunity-stages`. Per Manifest
+geht es nicht: der Sync-Diff ist auf die eigene `applicationId` beschraenkt
+und ein zweites Feld namens `stage` wird abgelehnt. Die Metadata-API kann
+es, und genau die ruft die Funktion.
 
-Einzutragen unter Settings > Datenmodell > Opportunities > Stage:
+**Spaetere Aenderungen an den Stages gehoeren aber in die Oberflaeche, nicht
+in den Code.** Der Grund ist gemessen, nicht vermutet: `updateOneField`
+ersetzt die Optionsliste und setzt dabei jeden Record auf den Default
+zurueck, auch wenn sich nur eine Farbe aendert. Im Test wurden aus 80
+Recherche, 40 In Kontakt und 30 Gewonnen nach einer reinen Farbaenderung
+150 mal Recherche. Die Settings-Oberflaeche migriert dagegen sauber.
+
+Die Funktion schuetzt davor: sie greift nur, solange das Feld noch Twentys
+fuenf Auslieferungsoptionen traegt. Auf einer eingerichteten Instanz tut sie
+nichts, egal was im Code steht. Wer die Stages im Code aendert und ein
+Deployment erwartet, wartet vergeblich — das ist Absicht.
+
+Zum Nachtragen von Hand unter Settings > Datenmodell > Opportunities > Stage:
 
 | # | Label | Farbe | gespeicherter Wert |
 |---|---|---|---|
@@ -138,7 +151,8 @@ Einzutragen unter Settings > Datenmodell > Opportunities > Stage:
 | 9 | Nurture | yellow | `NURTURE` |
 
 Die rechte Spalte leitet Twenty selbst aus dem Label ab, per `slugify` auf
-UPPER_SNAKE. Eintippen muss man sie nicht. Nachpruefen sollte man sie, denn
+UPPER_SNAKE. Eintippen muss man sie nicht. Beim Umbenennen in der
+Oberflaeche wandern bestehende Records mit. Nachpruefen sollte man sie, denn
 `brief-verschickt` vergleicht gegen `VERSCHICKT_ANTWORT_OFFEN`:
 
 ```sql
