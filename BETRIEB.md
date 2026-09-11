@@ -294,7 +294,7 @@ docker compose exec server yarn command:prod:background:logs
 ### 5. Danach pruefen
 
 ```bash
-curl -sf https://crm.example.de/healthz && echo OK
+curl -sf https://crm.kenergy-solutions.de/healthz && echo OK
 docker compose logs --since 10m worker | grep -i error
 ```
 

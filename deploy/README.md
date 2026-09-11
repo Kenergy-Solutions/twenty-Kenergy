@@ -38,14 +38,43 @@ Compose-File veroeffentlicht ihn bewusst nicht.
 
 ### 4. DNS
 
-Einen A-Record der Domain auf die statische IP setzen. **Vor** dem ersten
-Start von Caddy, sonst scheitert die Zertifikatsausstellung und Let's
-Encrypt drosselt nach mehreren Fehlversuchen.
+`kenergy-solutions.de` liegt bereits als Hosted Zone in Route 53, im Konto,
+das das AWS-Profil `admin` erreicht. Die Domain selbst ist woanders
+registriert, Route 53 hostet nur das DNS. `crm` ist dort noch frei, die
+Apex-Domain zeigt auf die bestehende Website und bleibt unangetastet.
+
+Den A-Record fuer die Subdomain anlegen, mit der statischen IP aus
+Schritt 2:
+
+```bash
+ZONE=$(aws --profile admin route53 list-hosted-zones \
+  --output text --query "HostedZones[?Name=='kenergy-solutions.de.'].Id" \
+  | sed 's#/hostedzone/##')
+
+aws --profile admin route53 change-resource-record-sets \
+  --hosted-zone-id "$ZONE" \
+  --change-batch '{
+    "Comment": "Twenty CRM auf Lightsail",
+    "Changes": [{
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "crm.kenergy-solutions.de",
+        "Type": "A",
+        "TTL": 300,
+        "ResourceRecords": [{"Value": "<statische-ip>"}]
+      }
+    }]
+  }'
+```
+
+**Vor** dem ersten Start von Caddy, sonst scheitert die
+Zertifikatsausstellung und Let's Encrypt drosselt nach mehreren
+Fehlversuchen. TTL bewusst niedrig, damit eine Korrektur schnell greift.
 
 Pruefen:
 
 ```bash
-dig +short crm.example.de
+dig +short crm.kenergy-solutions.de
 ```
 
 Muss die statische IP ausgeben.
@@ -185,7 +214,7 @@ Fertig, wenn dort `Nest application successfully started` steht.
 
 ```bash
 docker compose ps
-curl -sf https://crm.example.de/healthz && echo OK
+curl -sf https://crm.kenergy-solutions.de/healthz && echo OK
 ```
 
 Wenn Caddy kein Zertifikat bekommt: `docker compose logs caddy`. Fast
@@ -193,7 +222,7 @@ immer zeigt der A-Record noch nicht richtig oder Port 80 ist zu.
 
 ### 14. Ersten Nutzer anlegen
 
-`https://crm.example.de` im Browser oeffnen und registrieren. Die erste
+`https://crm.kenergy-solutions.de` im Browser oeffnen und registrieren. Die erste
 Registrierung erzeugt den Workspace und macht den Nutzer zum Admin. Jede
 weitere wird abgelehnt, weil `IS_MULTIWORKSPACE_ENABLED` auf `false`
 steht. Das ist die gewuenschte Einzelnutzer-Konfiguration und braucht
@@ -217,7 +246,7 @@ GitHub-Secret `TWENTY_PROD_API_KEY` hinterlegen, die Domain als
 Einmalig von Hand geht auch:
 
 ```bash
-yarn twenty remote:add --as prod --url https://crm.example.de
+yarn twenty remote:add --as prod --url https://crm.kenergy-solutions.de
 yarn twenty app:publish --private --remote prod
 yarn twenty app:install --remote prod
 ```
