@@ -30,6 +30,17 @@ trap cleanup EXIT
 
 log() { echo "[$(date -u +%FT%TZ)] $*"; }
 
+# Cron startet mit einem minimalen PATH ohne ~/.local/bin. Ohne diese
+# Aufloesung laeuft das Skript interaktiv, aber nachts nicht.
+AWS_CLI="$(command -v aws || true)"
+if [ -z "$AWS_CLI" ] && [ -x "$HOME/.local/bin/aws" ]; then
+	AWS_CLI="$HOME/.local/bin/aws"
+fi
+if [ -z "$AWS_CLI" ]; then
+	log "FEHLER: aws nicht gefunden (weder im PATH noch unter ~/.local/bin)"
+	exit 1
+fi
+
 log "Dump startet: Datenbank $PG_DATABASE_NAME"
 
 # pg_dump laeuft im db-Container, damit auf dem Host kein Client noetig ist
@@ -54,7 +65,7 @@ fi
 SIZE="$(du -h "$TMP_FILE" | cut -f1)"
 log "Dump fertig: $ARCHIVE ($SIZE)"
 
-aws s3 cp "$TMP_FILE" "s3://${BACKUP_S3_BUCKET}/postgres/${ARCHIVE}" \
+"$AWS_CLI" s3 cp "$TMP_FILE" "s3://${BACKUP_S3_BUCKET}/postgres/${ARCHIVE}" \
 	--storage-class STANDARD_IA
 
 log "Hochgeladen nach s3://${BACKUP_S3_BUCKET}/postgres/${ARCHIVE}"
@@ -64,12 +75,12 @@ log "Hochgeladen nach s3://${BACKUP_S3_BUCKET}/postgres/${ARCHIVE}"
 CUTOFF="$(date -u -d "${RETENTION_DAYS} days ago" +%Y-%m-%d 2>/dev/null \
 	|| date -u -v-"${RETENTION_DAYS}"d +%Y-%m-%d)"
 
-aws s3 ls "s3://${BACKUP_S3_BUCKET}/postgres/" \
+"$AWS_CLI" s3 ls "s3://${BACKUP_S3_BUCKET}/postgres/" \
 	| awk -v cutoff="$CUTOFF" '$1 < cutoff { print $4 }' \
 	| while read -r old; do
 		[ -n "$old" ] || continue
 		log "Loesche altes Backup: $old"
-		aws s3 rm "s3://${BACKUP_S3_BUCKET}/postgres/${old}"
+		"$AWS_CLI" s3 rm "s3://${BACKUP_S3_BUCKET}/postgres/${old}"
 	done
 
 log "Backup abgeschlossen"

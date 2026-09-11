@@ -119,8 +119,23 @@ Dann in der IAM-Konsole einen Access Key fuer diesen Benutzer erzeugen und
 auf dem Server hinterlegen:
 
 ```bash
-aws configure
+~/.local/bin/aws configure
 ```
+
+**Fallstrick:** die Instanz bekommt ueber IMDS bereits Zugangsdaten, und
+zwar fuer `AmazonLightsailInstanceRole` im AWS-internen Servicekonto
+`408194747457` — nicht in eurem. Ohne eigene Konfiguration schlaegt der
+Upload deshalb mit `AccessDenied` fehl, nicht mit "Unable to locate
+credentials". Die Meldung fuehrt in die Irre: sie sieht nach einem
+Bucket-Rechteproblem aus, obwohl schlicht die falsche Identitaet benutzt
+wird. Nachpruefen laesst sich das mit:
+
+```bash
+~/.local/bin/aws sts get-caller-identity
+```
+
+Steht dort ein anderes `Account` als `618010035756`, greift noch die
+Instanzrolle statt eures Benutzers.
 
 Region `eu-central-1`, Ausgabeformat `json`. Die Schluessel landen in
 `~/.aws/credentials` des Benutzers `ubuntu` und werden vom Backup-Skript
@@ -179,12 +194,18 @@ Logic Function nicht mehr feuert.
 
 ### 8c. AWS CLI installieren
 
+Bereits erledigt, ohne `sudo` nach `~/.local/bin`:
+
 ```bash
-curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/aws.zip
-unzip -q /tmp/aws.zip -d /tmp && sudo /tmp/aws/install && rm -rf /tmp/aws /tmp/aws.zip
+cd /tmp && curl -fsSL "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o aws.zip
+python3 -c 'import zipfile; zipfile.ZipFile("aws.zip").extractall(".")'
+chmod +x ./aws/install ./aws/dist/aws
+./aws/install --install-dir ~/.local/aws-cli --bin-dir ~/.local/bin
 ```
 
-Das Backup-Skript braucht `aws s3`.
+`unzip` ist auf der Instanz nicht vorhanden, deshalb der Umweg ueber
+Python. Das Backup-Skript sucht `aws` im PATH und faellt auf
+`~/.local/bin/aws` zurueck, weil Cron mit einem minimalen PATH startet.
 
 ### 9. An ghcr.io anmelden
 
