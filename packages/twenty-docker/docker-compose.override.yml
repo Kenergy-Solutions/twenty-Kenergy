@@ -1,0 +1,25 @@
+# Lokale Portabweichungen fuer Kenergy Solutions.
+#
+# 5432 (kenergy-local-db) und 6379 (kenergy-local-redis) sind auf diesem
+# Rechner von anderen Projekten belegt, deshalb bindet Twenty auf 5434/6380.
+# Die Aenderung liegt hier statt in docker-compose.dev.yml, damit der Rebase
+# auf neue Twenty-Releases konfliktfrei bleibt.
+#
+# Compose laedt diese Datei NICHT automatisch, wenn -f uebergeben wird.
+# Beide Dateien explizit angeben:
+#
+#   cd packages/twenty-docker
+#   docker compose -f docker-compose.dev.yml -f docker-compose.override.yml up -d
+#   docker compose -f docker-compose.dev.yml -f docker-compose.override.yml ps
+#   docker compose -f docker-compose.dev.yml -f docker-compose.override.yml down
+
+name: twenty-dev
+
+services:
+  db:
+    ports: !override
+      - "127.0.0.1:5434:5432"
+
+  redis:
+    ports: !override
+      - "127.0.0.1:6380:6379"
