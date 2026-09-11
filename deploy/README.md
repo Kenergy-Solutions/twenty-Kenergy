@@ -9,6 +9,12 @@ Ein einzelner Nutzer, Kosten unter 30 $ im Monat.
 
 ---
 
+> **Stand:** Schritte 1 bis 5 sind erledigt. Die Instanz `twenty-crm`
+> laeuft mit der statischen IP `3.66.54.132`, Ports 22/80/443 sind offen,
+> `crm.kenergy-solutions.de` zeigt darauf, der Backup-Bucket existiert, und
+> `~/twenty/` auf dem Server enthaelt die Dateien samt ausgefuellter `.env`.
+> Offen sind Schritt 6 (PAT), 8 bis 9 (Docker, ghcr-Login) und ab 12.
+
 ## Vorher, ausserhalb des Servers
 
 ### 1. Lightsail-Instanz anlegen
@@ -79,14 +85,52 @@ dig +short crm.kenergy-solutions.de
 
 Muss die statische IP ausgeben.
 
-### 5. S3-Bucket und IAM fuer die Backups
+### 5. S3-Bucket und Zugang fuer die Backups
 
-Bucket in `eu-central-1` anlegen, Versionierung an, oeffentlichen Zugriff
-blockiert. Der Instanz ein IAM-Profil geben, das auf diesem Bucket
-`s3:PutObject`, `s3:GetObject`, `s3:ListBucket` und `s3:DeleteObject` darf.
+Der Bucket `kenergy-twenty-backups` ist bereits angelegt: `eu-central-1`,
+Versionierung an, oeffentlicher Zugriff vollstaendig blockiert.
 
-Ueber die Rolle statt ueber Zugangsschluessel, damit keine AWS-Keys auf der
-Instanz liegen. Deshalb stehen in `.env.example` auch keine.
+**Lightsail kennt keine IAM-Instanzprofile.** Das ist ein EC2-Konzept; die
+Lightsail-API hat keinen Aufruf dafuer. Eine Lightsail-Instanz kommt also
+nur mit echten Zugangsschluesseln an S3.
+
+Deshalb: einen eigenen IAM-Benutzer nur fuer das Backup anlegen, mit einer
+Richtlinie, die ausschliesslich diesen einen Bucket erlaubt:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject", "s3:DeleteObject"],
+      "Resource": "arn:aws:s3:::kenergy-twenty-backups/*"
+    },
+    {
+      "Effect": "Allow",
+      "Action": "s3:ListBucket",
+      "Resource": "arn:aws:s3:::kenergy-twenty-backups"
+    }
+  ]
+}
+```
+
+Dann in der IAM-Konsole einen Access Key fuer diesen Benutzer erzeugen und
+auf dem Server hinterlegen:
+
+```bash
+aws configure
+```
+
+Region `eu-central-1`, Ausgabeformat `json`. Die Schluessel landen in
+`~/.aws/credentials` des Benutzers `ubuntu` und werden vom Backup-Skript
+benutzt. In `.env` stehen sie bewusst nicht, damit sie nicht versehentlich
+in einem Dump oder Log auftauchen.
+
+Der eingeschraenkte Benutzer ist hier der Ersatz fuer die Rolle, die es bei
+Lightsail nicht gibt. Ein Schluessel mit Adminrechten auf der Instanz waere
+die schlechteste Variante: wer die Instanz uebernimmt, uebernimmt dann das
+ganze Konto.
 
 ### 6. GitHub Personal Access Token
 
@@ -164,23 +208,21 @@ Aus diesem Verzeichnis des Repos kopieren: `docker-compose.yml`,
 `Caddyfile`, `backup.sh`, `.env.example`. Entweder per `scp` vom Laptop
 oder per `git clone` des Forks und dann aus `deploy/` heraus.
 
-### 11. .env ausfuellen
+### 11. .env pruefen
+
+Die Datei existiert bereits auf dem Server mit Rechten `600`. Secrets
+wurden dort mit `openssl` erzeugt und direkt in die Datei geschrieben, sie
+sind nie ueber einen Laptop oder Chat gelaufen.
+
+Nachsehen, ohne die Secrets auszugeben:
 
 ```bash
-cp .env.example .env
+cd ~/twenty && grep -vE '^#|^$' .env | sed -E 's/^(ENCRYPTION_KEY|PG_DATABASE_PASSWORD)=.+/\1=<gesetzt>/'
 ```
 
-Secrets auf dem Server erzeugen, nicht auf dem Laptop, und nicht durch
-einen Chat schicken:
-
-```bash
-openssl rand -base64 32   # -> ENCRYPTION_KEY
-openssl rand -hex 32      # -> PG_DATABASE_PASSWORD
-```
-
-Dann `.env` bearbeiten und ausfuellen: `DOMAIN`, `ACME_EMAIL`,
-`SERVER_URL`, `ENCRYPTION_KEY`, `PG_DATABASE_PASSWORD`,
-`BACKUP_S3_BUCKET`.
+Einen Wert solltest du pruefen: `ACME_EMAIL` steht auf
+`admin@kenergy-solutions.de`. Dorthin schickt Let's Encrypt die
+Ablaufwarnungen, das Postfach sollte also jemand lesen.
 
 `SERVER_URL` muss die echte HTTPS-Domain sein. Bleibt dort localhost,
 wird das Session-Cookie ohne `Secure` gesetzt, alle Dateilinks zeigen ins
