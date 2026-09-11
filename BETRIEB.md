@@ -94,7 +94,7 @@ Zeigt das mehr als einen Stack, alles beenden und einmal sauber starten.
 
 ### App entwickeln
 
-Die App liegt in einem eigenen Repo, `JaBu3001/kenergy-crm-app`, und
+Die App liegt in einem eigenen Repo, `Kenergy-Solutions/kenergy-crm-app`, und
 **nicht** im Fork. Alles, was als Objekt, Feld oder Logic Function geht,
 gehoert dorthin.
 
