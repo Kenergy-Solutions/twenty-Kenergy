@@ -20,6 +20,7 @@ concurrency:
 
 jobs:
   push_docs:
+    if: github.repository == 'twentyhq/twenty'
     name: Push documentation to Crowdin
     runs-on: ubuntu-latest
     steps:
